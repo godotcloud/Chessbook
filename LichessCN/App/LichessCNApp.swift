@@ -2,54 +2,31 @@ import SwiftUI
 
 @main
 struct LichessCNApp: App {
-    @StateObject private var appState = AppStateViewModel()
+    @StateObject private var bridgeManager = HybridTranslationBridgeManager()
 
     var body: some Scene {
         WindowGroup {
-            MainTabView()
-                .environmentObject(appState)
+            HybridRootView()
+                .environmentObject(bridgeManager)
         }
     }
 }
 
-@MainActor
-final class AppStateViewModel: ObservableObject {
-    @AppStorage("lichess_api_token") var apiToken: String = ""
-    @AppStorage("preferred_translation_provider") var selectedProviderRaw: String = TranslationProviderType.pollinationsLLM.rawValue
-    @AppStorage("bilingual_study_mode") var showBilingualComments: Bool = true
-    @AppStorage("auto_translate_study") var autoTranslateStudy: Bool = true
-    @AppStorage("board_theme") var boardThemeRaw: String = BoardTheme.brown.rawValue
+enum InlineInjectionMode: String, CaseIterable, Identifiable {
+    case bilingual = "bilingual"
+    case replaceWithChinese = "replace"
+    case subtitleOnly = "subtitle_only"
 
-    @Published var accountUsername: String? = nil
-    @Published var accountRatingSummary: String = "未登录（支持免登录浏览研习/谜题/TV/云分析）"
+    var id: String { rawValue }
 
-    var selectedProvider: TranslationProviderType {
-        get { TranslationProviderType(rawValue: selectedProviderRaw) ?? .pollinationsLLM }
-        set { selectedProviderRaw = newValue.rawValue }
-    }
-
-    var boardTheme: BoardTheme {
-        get { BoardTheme(rawValue: boardThemeRaw) ?? .brown }
-        set { boardThemeRaw = newValue.rawValue }
-    }
-
-    func verifyTokenIfPresent() async {
-        let trimmed = apiToken.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            accountUsername = nil
-            accountRatingSummary = "未配置 Token（公开功能可直接使用）"
-            return
-        }
-        do {
-            let profile = try await LichessAPIService.shared.fetchAccountProfile(token: trimmed)
-            accountUsername = profile.username
-            let rapid = profile.perfs?.rapid?.rating ?? 1500
-            let blitz = profile.perfs?.blitz?.rating ?? 1500
-            let puzzle = profile.perfs?.puzzle?.rating ?? 1500
-            accountRatingSummary = "@\(profile.username) · 快棋 \(rapid) | 超快 \(blitz) | 谜题 \(puzzle)"
-        } catch {
-            accountUsername = nil
-            accountRatingSummary = "Token 验证失败: \(error.localizedDescription)"
+    var displayName: String {
+        switch self {
+        case .bilingual:
+            return "网页内嵌中英双语 (推荐)"
+        case .replaceWithChinese:
+            return "网页直接替换为中文"
+        case .subtitleOnly:
+            return "仅底部原生悬浮窗显示译文"
         }
     }
 }
