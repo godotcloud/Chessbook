@@ -2,54 +2,39 @@ import SwiftUI
 
 @main
 struct LichessCNApp: App {
-    @StateObject private var appState = AppStateViewModel()
+    @StateObject private var bridgeManager = HybridTranslationBridgeManager()
 
     var body: some Scene {
         WindowGroup {
-            MainTabView()
-                .environmentObject(appState)
+            HybridRootView()
+                .environmentObject(bridgeManager)
         }
     }
 }
 
-@MainActor
-final class AppStateViewModel: ObservableObject {
-    @AppStorage("lichess_api_token") var apiToken: String = ""
-    @AppStorage("preferred_translation_provider") var selectedProviderRaw: String = TranslationProviderType.pollinationsLLM.rawValue
-    @AppStorage("bilingual_study_mode") var showBilingualComments: Bool = true
-    @AppStorage("auto_translate_study") var autoTranslateStudy: Bool = true
-    @AppStorage("board_theme") var boardThemeRaw: String = BoardTheme.brown.rawValue
+enum InlineInjectionMode: String, CaseIterable, Identifiable {
+    case smartCompact = "smart_compact"
+    case bilingual = "bilingual"
+    case subtitleOnly = "subtitle_only"
 
-    @Published var accountUsername: String? = nil
-    @Published var accountRatingSummary: String = "未登录（支持免登录浏览研习/谜题/TV/云分析）"
+    var id: String { rawValue }
 
-    var selectedProvider: TranslationProviderType {
-        get { TranslationProviderType(rawValue: selectedProviderRaw) ?? .pollinationsLLM }
-        set { selectedProviderRaw = newValue.rawValue }
-    }
-
-    var boardTheme: BoardTheme {
-        get { BoardTheme(rawValue: boardThemeRaw) ?? .brown }
-        set { boardThemeRaw = newValue.rawValue }
-    }
-
-    func verifyTokenIfPresent() async {
-        let trimmed = apiToken.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            accountUsername = nil
-            accountRatingSummary = "未配置 Token（公开功能可直接使用）"
-            return
+    var displayName: String {
+        switch self {
+        case .smartCompact:
+            return "清爽中文替换 + [🔊朗读] / [原文] 按钮 (推荐)"
+        case .bilingual:
+            return "网页内上下双语同时显示 + [🔊朗读]"
+        case .subtitleOnly:
+            return "不改动网页·仅悬浮窗看译文与朗读"
         }
-        do {
-            let profile = try await LichessAPIService.shared.fetchAccountProfile(token: trimmed)
-            accountUsername = profile.username
-            let rapid = profile.perfs?.rapid?.rating ?? 1500
-            let blitz = profile.perfs?.blitz?.rating ?? 1500
-            let puzzle = profile.perfs?.puzzle?.rating ?? 1500
-            accountRatingSummary = "@\(profile.username) · 快棋 \(rapid) | 超快 \(blitz) | 谜题 \(puzzle)"
-        } catch {
-            accountUsername = nil
-            accountRatingSummary = "Token 验证失败: \(error.localizedDescription)"
+    }
+
+    var shortName: String {
+        switch self {
+        case .smartCompact: return "清爽中文"
+        case .bilingual: return "双语同显"
+        case .subtitleOnly: return "仅悬浮窗"
         }
     }
 }
