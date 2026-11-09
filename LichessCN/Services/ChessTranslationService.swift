@@ -12,13 +12,13 @@ enum TranslationProviderType: String, CaseIterable, Identifiable {
     var displayName: String {
         switch self {
         case .gtxHybrid:
-            return "GTX 极速神经翻译 + 国际象棋术语库 (免Key·毫秒级响应)"
+            return "GTX 极速神经翻译 + 国际象棋术语库 (免Key·毫秒级)"
         case .pollinationsLLM:
-            return "Pollinations AI 大模型 (免Key·大师棋评语境精译)"
+            return "Pollinations AI 大模型 (免Key·大师语境精译)"
         case .lingvaGoogle:
-            return "Lingva 开源神经代理 (免Key·多节点容灾)"
+            return "Lingva 开源神经代理 (免Key·多节点)"
         case .myMemory:
-            return "MyMemory 协作翻译 API (免Key·稳定备用)"
+            return "MyMemory 协作翻译 API (免Key·备用)"
         case .localGlossaryOnly:
             return "离线国际象棋专业术语直译 (零网络延迟)"
         }
@@ -95,7 +95,6 @@ actor ChessTranslationService {
         }
     }
 
-    // MARK: - 1. GTX Free Neural Endpoint + Chess Glossary Pre/Post-Processing
     private func translateViaGTX(text: String) async throws -> String {
         let prepped = ChessGlossaryProcessor.preAnnotateTermsForMT(text)
         var comps = URLComponents(string: "https://translate.googleapis.com/translate_a/single")
@@ -129,7 +128,6 @@ actor ChessTranslationService {
         throw URLError(.cannotParseResponse)
     }
 
-    // MARK: - 2. Pollinations AI Free LLM (OpenAI-compatible zero-config endpoint)
     private func translateViaPollinationsLLM(text: String) async throws -> String {
         guard let url = URL(string: "https://text.pollinations.ai/openai") else {
             throw URLError(.badURL)
@@ -140,10 +138,10 @@ actor ChessTranslationService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         let systemPrompt = """
-        你是一位精通国际象棋的特级大师兼中文棋评翻译专家。请将以下 Lichess 研习(Study)的章节标题或着法注解准确、流畅地翻译为简体中文。
+        你是一位精通国际象棋的特级大师兼中文棋评翻译专家。请将以下 Lichess 研习(Study)的章节标题或着法注解准确、简练地翻译为简体中文。
         严格要求：
         1. 保留所有代数记谱法着法（如 1.e4, Nf3, Qxf7#, O-O）原样不变。
-        2. 使用地道的中国国际象棋专业术语（如 Pin=牵制, Fork=捉双, Skewer=串击, Discovered attack=闪击, Zugzwang=楚茨文克/迫移, Fianchetto=侧翼象, Passed pawn=通路兵, Outpost=前哨格, Blunder=败着, Prophylaxis=预防性着法, Tempo=先手/步数）。
+        2. 使用地道的中国国际象棋专业术语（Variation=变例, Study=研习, Defense=防御, Caro-Kann=卡罗-卡恩防御, Pin=牵制, Fork=捉双, Skewer=串击, Discovered attack=闪击, Zugzwang=楚茨文克/迫移, Fianchetto=侧翼象, Passed pawn=通路兵, Outpost=前哨格, Blunder=败着, Prophylaxis=预防性着法, Tempo=先手）。
         3. 只输出翻译后的中文内容，不要添加任何解释或前缀。
         """
 
@@ -176,7 +174,6 @@ actor ChessTranslationService {
         throw URLError(.cannotParseResponse)
     }
 
-    // MARK: - 3. Lingva Open-Source Google Translate Proxy (Zero-Key)
     private func translateViaLingva(text: String) async throws -> String {
         let instances = [
             "https://lingva.ml",
@@ -204,7 +201,6 @@ actor ChessTranslationService {
         throw URLError(.cannotConnectToHost)
     }
 
-    // MARK: - 4. MyMemory Free Translation REST API (Zero-Key)
     private func translateViaMyMemory(text: String) async throws -> String {
         let prepped = ChessGlossaryProcessor.preAnnotateTermsForMT(String(text.prefix(480)))
         var comps = URLComponents(string: "https://api.mymemory.translated.net/get")
@@ -242,8 +238,31 @@ actor ChessTranslationService {
 
 enum ChessGlossaryProcessor {
     static let termDictionary: [(pattern: String, chinese: String)] = [
+        ("classical variation", "古典变例"),
+        ("advance variation", "推进变例"),
+        ("exchange variation", "兑换变例"),
+        ("fantasy variation", "幻想变例"),
+        ("panov attack", "帕诺夫攻击"),
+        ("two knights", "双马变例"),
+        ("main line", "主线变例"),
+        ("sideline", "支线变例"),
+        ("variation", "变例"),
+        ("variations", "变例"),
+        ("caro-kann defense", "卡罗-卡恩防御"),
+        ("caro-kann defence", "卡罗-卡恩防御"),
+        ("caro-kann", "卡罗-卡恩防御"),
+        ("sicilian defense", "西西里防御"),
+        ("sicilian defence", "西西里防御"),
+        ("french defense", "法兰西防御"),
+        ("ruy lopez", "西班牙开局"),
+        ("italian game", "意大利开局"),
+        ("queen's gambit", "后翼弃兵"),
+        ("king's indian", "古印度防御"),
+        ("nimzo-indian", "尼姆佐-印度防御"),
+        ("grunfeld", "格林菲尔德防御"),
+        ("english opening", "英国式开局"),
         ("zugzwang", "楚茨文克(迫移)"),
-        ("fianchetto", "侧翼象(堡垒象)"),
+        ("fianchetto", "侧翼象"),
         ("en passant", "吃过路兵"),
         ("discovered check", "闪将"),
         ("discovered attack", "闪击"),
@@ -262,35 +281,23 @@ enum ChessGlossaryProcessor {
         ("hanging piece", "悬子"),
         ("minority attack", "少子冲击"),
         ("prophylaxis", "预防性着法"),
-        ("prophylactic", "预防性的"),
-        ("zwischenzug", "过渡着(中间着)"),
+        ("zwischenzug", "过渡着"),
         ("intermezzo", "过渡着"),
         ("desperado", "亡命子"),
         ("opposition", "对王"),
         ("triangulation", "三角机动"),
         ("fortress", "堡垒和棋"),
         ("perpetual check", "长将和棋"),
-        ("stalemate", "逼和(无子可动)"),
+        ("stalemate", "逼和"),
         ("castling", "王车易位"),
         ("kingside", "王翼"),
         ("queenside", "后翼"),
-        ("sicilian defense", "西西里防御"),
-        ("sicilian defence", "西西里防御"),
-        ("caro-kann", "卡罗-卡恩防御"),
-        ("french defense", "法兰西防御"),
-        ("ruy lopez", "西班牙开局"),
-        ("italian game", "意大利开局"),
-        ("queen's gambit", "后翼弃兵"),
-        ("king's indian", "古印度防御"),
-        ("nimzo-indian", "尼姆佐-印度防御"),
-        ("grunfeld", "格林菲尔德防御"),
-        ("english opening", "英国式开局"),
-        ("blunder", "败着(大漏)"),
+        ("blunder", "败着"),
         ("inaccuracy", "缓着"),
         ("brilliant", "妙着"),
         ("novelty", "理论新着"),
         ("initiative", "主动权"),
-        ("development", "出子效率"),
+        ("development", "出子"),
         ("center control", "中心控制"),
         ("open file", "开放线"),
         ("half-open file", "半开放线"),
@@ -303,11 +310,25 @@ enum ChessGlossaryProcessor {
     static func preAnnotateTermsForMT(_ input: String) -> String {
         var output = input
         let contextualReplacements: [(String, String)] = [
-            ("fork", "捉双(战术)"),
-            ("pin", "牵制(战术)"),
-            ("skewer", "串击(战术)"),
+            ("Classical Variation", "古典变例"),
+            ("Advance Variation", "推进变例"),
+            ("Exchange Variation", "兑换变例"),
+            ("Fantasy Variation", "幻想变例"),
+            ("Two Knights Variation", "双马变例"),
+            ("variation", "变例"),
+            ("variations", "变例"),
+            ("Caro-Kann", "卡罗-卡恩"),
+            ("in this study", "在本研习中"),
+            ("this study", "本研习"),
+            ("black opening", "黑方开局"),
+            ("white opening", "白方开局"),
+            ("this defense", "这种防御"),
+            ("this defence", "这种防御"),
+            ("fork", "捉双"),
+            ("pin", "牵制"),
+            ("skewer", "串击"),
             ("zugzwang", "楚茨文克(迫移)"),
-            ("fianchetto", "侧翼出象"),
+            ("fianchetto", "侧翼象"),
             ("en passant", "吃过路兵"),
             ("passed pawn", "通路兵"),
             ("isolated pawn", "孤兵"),
@@ -315,7 +336,6 @@ enum ChessGlossaryProcessor {
             ("outpost", "前哨格"),
             ("zwischenzug", "过渡着"),
             ("prophylaxis", "预防性着法"),
-            ("back rank", "底线"),
             ("kingside", "王翼"),
             ("queenside", "后翼")
         ]
@@ -331,6 +351,16 @@ enum ChessGlossaryProcessor {
     static func postProcessChineseChessTerms(_ translated: String) -> String {
         var result = translated
         let fixes: [(String, String)] = [
+            ("变奏曲", "变例"),
+            ("变奏", "变例"),
+            ("这项研究", "本研习"),
+            ("最新研究", "最新研习"),
+            ("这种辩护", "这种防御"),
+            ("辩护", "防御"),
+            ("Caro-Kann", "卡罗-卡恩"),
+            ("黑色开局", "黑方开局"),
+            ("白色开局", "白方开局"),
+            ("如何玩", "如何下好"),
             ("叉子", "捉双"),
             ("餐叉", "捉双"),
             ("大头针", "牵制"),
@@ -344,8 +374,7 @@ enum ChessGlossaryProcessor {
             ("黑色的王", "黑王"),
             ("主教", "象"),
             ("骑士", "马"),
-            ("城堡", "车"),
-            ("卒", "兵")
+            ("城堡", "车")
         ]
         for (wrong, right) in fixes {
             result = result.replacingOccurrences(of: wrong, with: right)
