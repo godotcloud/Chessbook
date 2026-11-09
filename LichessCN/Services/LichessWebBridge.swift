@@ -1,7 +1,6 @@
 import Foundation
 import WebKit
 import Combine
-import SwiftUI
 
 @MainActor
 final class HybridTranslationBridgeManager: NSObject, ObservableObject {
@@ -11,6 +10,7 @@ final class HybridTranslationBridgeManager: NSObject, ObservableObject {
     @Published var canGoBack: Bool = false
     @Published var canGoForward: Bool = false
 
+    // Real-time intercepted study comment state
     @Published var activeOriginalComment: String = ""
     @Published var activeTranslatedComment: String = ""
     @Published var activeChapterTitle: String = ""
@@ -18,6 +18,7 @@ final class HybridTranslationBridgeManager: NSObject, ObservableObject {
     @Published var translatedCount: Int = 0
     @Published var lastUsedProviderBadge: String = "GTX极速"
 
+    // User preferences
     @Published var autoTranslateEnabled: Bool = true {
         didSet { syncConfigToWebView() }
     }
@@ -29,14 +30,10 @@ final class HybridTranslationBridgeManager: NSObject, ObservableObject {
             }
         }
     }
-    // Default to smartCompact so Chinese replaces long English in-place with an [原文] toggle button,
-    // completely preventing text crowding!
-    @Published var injectionModeRaw: String = InlineInjectionMode.smartCompact.rawValue {
+    @Published var injectionModeRaw: String = InlineInjectionMode.bilingual.rawValue {
         didSet { syncConfigToWebView() }
     }
-    // Off by default so the bottom of the screen is never covered unless the user wants a floating card
-    @Published var showFloatingSubtitleCard: Bool = false
-    @Published var isCompactFullscreen: Bool = false
+    @Published var showFloatingSubtitleCard: Bool = true
 
     weak var webView: WKWebView?
 
@@ -46,7 +43,7 @@ final class HybridTranslationBridgeManager: NSObject, ObservableObject {
     }
 
     var injectionMode: InlineInjectionMode {
-        get { InlineInjectionMode(rawValue: injectionModeRaw) ?? .smartCompact }
+        get { InlineInjectionMode(rawValue: injectionModeRaw) ?? .bilingual }
         set { injectionModeRaw = newValue.rawValue }
     }
 
@@ -54,6 +51,7 @@ final class HybridTranslationBridgeManager: NSObject, ObservableObject {
         var target = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
         if !target.hasPrefix("http://") && !target.hasPrefix("https://") {
             if target.count == 8 && !target.contains("/") && !target.contains(".") {
+                // Treat 8-char ID as a Lichess Study ID
                 target = "https://lichess.org/study/\(target)"
             } else {
                 target = "https://\(target)"
@@ -79,6 +77,7 @@ final class HybridTranslationBridgeManager: NSObject, ObservableObject {
         webView?.evaluateJavaScript(js, completionHandler: nil)
     }
 
+    // Handles incoming messages from the injected WKUserScript
     func handleScriptMessage(_ body: [String: Any]) {
         guard let action = body["action"] as? String else { return }
 
@@ -139,10 +138,10 @@ final class HybridTranslationBridgeManager: NSObject, ObservableObject {
                 activeTranslatedComment = zh
             }
 
+            // Escape string safely for JS injection
             if let jsonData = try? JSONSerialization.data(withJSONObject: [
                 "id": domId,
                 "zh": zh,
-                "orig": rawText,
                 "badge": used.shortBadge,
                 "mode": injectionMode.rawValue
             ]),
@@ -153,7 +152,7 @@ final class HybridTranslationBridgeManager: NSObject, ObservableObject {
         }
     }
 
-    // MARK: - Injected JS & Responsive Layout CSS (Fixes .gamebook overlap, chapter clipping & board top cutoff)
+    // MARK: - Injected JavaScript for Lichess Study Real-Time Interception & Inline DOM Rendering
     static let injectedStudyInterceptorJS = #"""
     (function() {
       if (window.__LichessCN_Initialized) return;
@@ -161,167 +160,54 @@ final class HybridTranslationBridgeManager: NSObject, ObservableObject {
 
       let config = {
         enabled: true,
-        mode: 'smart_compact' // 'smart_compact' | 'bilingual' | 'subtitle_only'
+        mode: 'bilingual' // 'bilingual' | 'replace' | 'subtitle_only'
       };
 
       let nodeCounter = 1;
       let lastActiveCommentText = '';
 
+      // Inject CSS styling for inline Chinese translations inside Lichess dark & light themes
       function ensureStyleInjected() {
         if (document.getElementById('lichesscn-inline-style')) return;
         const style = document.createElement('style');
         style.id = 'lichesscn-inline-style';
         style.textContent = `
-          /* 1. Prevent chessboard top rank from being clipped under header */
-          main.analyse {
-            padding-top: 2px !important;
-          }
-
-          /* 2. Fix .gamebook (Interactive Study) overlap between comment text, green Next button (.floor), and blue octopus (.mascot) */
-          .gamebook {
-            display: flex !important;
-            flex-direction: column !important;
-            justify-content: space-between !important;
-            height: auto !important;
-            max-height: none !important;
-            overflow: visible !important;
-            position: relative !important;
-            padding-bottom: 6px !important;
-          }
-          .gamebook .comment {
-            position: relative !important;
-            max-height: 155px !important;
-            overflow-y: auto !important;
-            -webkit-overflow-scrolling: touch !important;
-            padding: 8px 12px !important;
-            margin-bottom: 6px !important;
-            font-size: 0.94rem !important;
-            line-height: 1.48 !important;
-            z-index: 2 !important;
-          }
-          .gamebook .floor {
-            position: relative !important;
-            top: auto !important;
-            bottom: auto !important;
-            left: auto !important;
-            right: auto !important;
-            margin-top: 4px !important;
-            padding: 4px 10px !important;
-            min-height: 44px !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            z-index: 3 !important;
-          }
-          .gamebook .floor button.next,
-          .gamebook .floor button {
-            position: relative !important;
-            padding: 8px 18px !important;
-            font-size: 1rem !important;
-            border-radius: 8px !important;
-          }
-          /* Shrink decorative blue octopus mascot so it never blocks Chinese text */
-          .gamebook .mascot {
-            width: 34px !important;
-            height: 34px !important;
-            right: 6px !important;
-            bottom: 6px !important;
-            opacity: 0.22 !important;
-            pointer-events: none !important;
-            z-index: 1 !important;
-          }
-
-          /* 3. Fix regular .study__comments scrolling cleanly without pushing page layout */
-          .study__comments {
-            max-height: 150px !important;
-            overflow-y: auto !important;
-            -webkit-overflow-scrolling: touch !important;
-          }
-
-          /* 4. Fix .study__chapters row height so translated chapter names are never cut off */
-          .study__chapters > div,
-          .study__chapters .elem,
-          .study__chapters button {
-            height: auto !important;
-            min-height: 2.4rem !important;
-            padding-top: 5px !important;
-            padding-bottom: 5px !important;
-            align-items: center !important;
-          }
-          .study__chapters h3 {
-            white-space: normal !important;
-            line-height: 1.32 !important;
-            font-size: 0.9rem !important;
-          }
-
-          /* 5. Clean styling for injected Chinese translations */
-          .lc-smart-wrap {
-            display: block;
-            line-height: 1.48;
-            word-break: break-word;
-          }
-          .lc-smart-zh {
-            color: inherit;
-            font-weight: 500;
-          }
-          .lc-toggle-orig-btn {
-            display: inline-block;
-            margin-left: 6px;
-            padding: 1px 6px;
-            font-size: 0.74em;
-            border-radius: 4px;
-            background: rgba(56, 147, 232, 0.18);
-            color: #3893e8;
-            cursor: pointer;
-            user-select: none;
-            font-weight: 600;
-            vertical-align: middle;
-          }
-          .lc-orig-collapsible {
-            display: none;
-            margin-top: 5px;
-            padding-top: 5px;
-            border-top: 1px dashed rgba(128, 128, 128, 0.3);
-            font-size: 0.85em;
-            opacity: 0.78;
-            line-height: 1.38;
-          }
-          .lc-orig-collapsible.lc-open {
-            display: block;
-          }
           .lc-zh-block {
-            margin-top: 5px;
-            padding: 5px 8px;
+            margin-top: 6px;
+            padding: 6px 10px;
             border-left: 3px solid #3893e8;
-            background: rgba(56, 147, 232, 0.11);
+            background: rgba(56, 147, 232, 0.13);
             border-radius: 4px;
-            font-size: 0.92em;
-            line-height: 1.42;
+            font-size: 0.95em;
+            line-height: 1.45;
             color: inherit;
             font-weight: 500;
             word-break: break-word;
           }
           .lc-zh-inline {
-            display: inline;
-            margin-left: 3px;
-            color: #3893e8;
+            display: inline-block;
+            margin-left: 4px;
+            padding: 1px 6px;
+            background: rgba(56, 147, 232, 0.16);
+            border-radius: 4px;
+            color: #5ab2ff;
             font-weight: 500;
           }
-          .lc-zh-chapter-inline {
-            display: inline;
-            margin-left: 6px;
-            font-size: 0.92em;
-            color: #3893e8;
-            font-weight: 600;
+          .lc-zh-chapter {
+            display: block;
+            margin-top: 2px;
+            font-size: 0.88em;
+            color: #5ab2ff;
+            font-weight: 500;
           }
           .lc-zh-badge {
             display: inline-block;
-            font-size: 0.7em;
-            padding: 0px 4px;
-            margin-right: 5px;
+            font-size: 0.72em;
+            padding: 1px 5px;
+            margin-right: 6px;
             border-radius: 3px;
-            background: rgba(56, 147, 232, 0.2);
-            color: #3893e8;
+            background: rgba(56, 147, 232, 0.25);
+            color: #6bc0ff;
             font-weight: 600;
           }
         `;
@@ -338,48 +224,44 @@ final class HybridTranslationBridgeManager: NSObject, ObservableObject {
         return cjk > Math.max(2, str.length * 0.3);
       }
 
+      // Extract clean text from an element while ignoring our own injected .lc-zh-* nodes
       function extractOriginalText(el) {
         if (el.dataset && el.dataset.lcOrigText) {
           return el.dataset.lcOrigText;
         }
         const clone = el.cloneNode(true);
-        const injected = clone.querySelectorAll('.lc-smart-wrap, .lc-zh-block, .lc-zh-inline, .lc-zh-chapter-inline, .author, .by');
+        const injected = clone.querySelectorAll('.lc-zh-block, .lc-zh-inline, .lc-zh-chapter, .author, .by');
         injected.forEach(n => n.remove());
         return (clone.innerText || clone.textContent || '').trim();
       }
 
+      // Scan Lichess Study DOM for chapters, active commentary, gamebook prompts, and move tree comments
       function scanStudyDOM(forceAll) {
         if (!config.enabled) return;
         ensureStyleInjected();
 
         const batch = [];
 
-        // 1. Active Study Comment Box (.gamebook .comment, .study__comments)
+        // 1. Active Study Comment Box (.study__comments, .gamebook .comment, .analyse__tools .comment)
         const activeSelectors = [
-          '.gamebook .comment .content',
-          '.gamebook .comment',
           '.study__comments .content',
           '.study__comments',
-          '.gamebook .hint'
+          '.gamebook .comment',
+          '.gamebook__comment',
+          '.gamebook .hint',
+          '.analyse__tools > .ceval + .comment',
+          '.analyse__underboard .study__comments'
         ];
-
-        const visitedElements = new Set();
 
         for (const sel of activeSelectors) {
           const nodes = document.querySelectorAll(sel);
           nodes.forEach(el => {
-            // Avoid translating both .gamebook .comment and its child .content
-            if (visitedElements.has(el) || (el.parentElement && visitedElements.has(el.parentElement))) return;
-            if (el.querySelector('.content') && sel === '.gamebook .comment') return;
-            if (el.querySelector('.content') && sel === '.study__comments') return;
-
             const text = extractOriginalText(el);
             if (!text || text.length < 2 || hasMostlyChinese(text)) return;
-            visitedElements.add(el);
 
             if (text !== lastActiveCommentText) {
               lastActiveCommentText = text;
-              const activeChapEl = document.querySelector('.study__chapters .active h3, .study__chapters .elem.active h3');
+              const activeChapEl = document.querySelector('.study__chapters .active h3, .study__chapters .elem.active h3, .study__chapters .active');
               const chapName = activeChapEl ? extractOriginalText(activeChapEl) : '';
               try {
                 window.webkit.messageHandlers.lichessTranslator.postMessage({
@@ -394,7 +276,6 @@ final class HybridTranslationBridgeManager: NSObject, ObservableObject {
               if (!el.dataset.lcId) {
                 el.dataset.lcId = 'lc_node_' + (nodeCounter++);
               }
-              el.dataset.lcOrigText = text;
               el.dataset.lcLastSource = text;
               el.dataset.lcKind = 'active_comment';
               batch.push({ id: el.dataset.lcId, text: text, kind: 'active_comment' });
@@ -402,8 +283,8 @@ final class HybridTranslationBridgeManager: NSObject, ObservableObject {
           });
         }
 
-        // 2. Move Tree Inline Comments (<comment> inside .tview2 / .analyse__moves)
-        const inlineComments = document.querySelectorAll('.tview2 comment, .analyse__moves comment');
+        // 2. Move Tree Inline Comments (<comment> inside .analyse__moves / .tview2)
+        const inlineComments = document.querySelectorAll('.tview2 comment, .analyse__moves comment, comment');
         inlineComments.forEach(el => {
           const text = extractOriginalText(el);
           if (!text || text.length < 2 || hasMostlyChinese(text)) return;
@@ -411,7 +292,6 @@ final class HybridTranslationBridgeManager: NSObject, ObservableObject {
             if (!el.dataset.lcId) {
               el.dataset.lcId = 'lc_node_' + (nodeCounter++);
             }
-            el.dataset.lcOrigText = text;
             el.dataset.lcLastSource = text;
             el.dataset.lcKind = 'inline_comment';
             batch.push({ id: el.dataset.lcId, text: text, kind: 'inline_comment' });
@@ -419,7 +299,7 @@ final class HybridTranslationBridgeManager: NSObject, ObservableObject {
         });
 
         // 3. Study Chapter List Titles (.study__chapters h3)
-        const chapterNodes = document.querySelectorAll('.study__chapters h3, .study__chapters .chapter-name');
+        const chapterNodes = document.querySelectorAll('.study__chapters h3, .study__chapters .chapter-name, .study__chapters > div > h3');
         chapterNodes.forEach(el => {
           const text = extractOriginalText(el);
           if (!text || text.length < 2 || hasMostlyChinese(text)) return;
@@ -427,7 +307,6 @@ final class HybridTranslationBridgeManager: NSObject, ObservableObject {
             if (!el.dataset.lcId) {
               el.dataset.lcId = 'lc_node_' + (nodeCounter++);
             }
-            el.dataset.lcOrigText = text;
             el.dataset.lcLastSource = text;
             el.dataset.lcKind = 'chapter_title';
             batch.push({ id: el.dataset.lcId, text: text, kind: 'chapter_title' });
@@ -435,6 +314,7 @@ final class HybridTranslationBridgeManager: NSObject, ObservableObject {
         });
 
         if (batch.length > 0) {
+          // Send in chunks of 12 to avoid overwhelming a single bridge message
           const slice = batch.slice(0, 12);
           try {
             window.webkit.messageHandlers.lichessTranslator.postMessage({
@@ -445,81 +325,46 @@ final class HybridTranslationBridgeManager: NSObject, ObservableObject {
         }
       }
 
+      // Callback invoked by Native Swift once a translation completes
       window.__LichessCN_applyTranslation = function(payload) {
         if (!payload || !payload.id || !payload.zh) return;
         const el = document.querySelector('[data-lc-id="' + payload.id + '"]');
         if (!el) return;
 
-        const origText = el.dataset.lcOrigText || payload.orig || extractOriginalText(el);
-        el.dataset.lcOrigText = origText;
-
-        // Clean any previous injected nodes
-        const oldInjected = el.querySelectorAll('.lc-smart-wrap, .lc-zh-block, .lc-zh-inline, .lc-zh-chapter-inline');
+        // Remove any previous injected translation inside this element
+        const oldInjected = el.querySelectorAll('.lc-zh-block, .lc-zh-inline, .lc-zh-chapter');
         oldInjected.forEach(n => n.remove());
 
         if (config.mode === 'subtitle_only') {
-          el.textContent = origText;
           return;
         }
 
         const kind = el.dataset.lcKind || 'comment';
-
-        if (kind === 'chapter_title') {
-          // Single-line compact chapter title: "中文名 · Original" so it never clips vertically
-          el.textContent = payload.zh + ' · ' + origText;
-          return;
-        }
-
-        if (kind === 'inline_comment') {
-          if (config.mode === 'smart_compact') {
-            el.textContent = payload.zh;
-          } else {
-            el.textContent = origText;
-            const span = document.createElement('span');
-            span.className = 'lc-zh-inline';
-            span.textContent = ' [' + payload.zh + ']';
-            el.appendChild(span);
+        if (config.mode === 'replace') {
+          if (!el.dataset.lcOrigText) {
+            el.dataset.lcOrigText = extractOriginalText(el);
           }
+          el.textContent = payload.zh;
           return;
         }
 
-        // Active comment (.gamebook .comment or .study__comments)
-        if (config.mode === 'smart_compact') {
-          // Replace bulky English paragraph in-place with Chinese + a tiny [原文] toggle button
-          el.innerHTML = '';
-          const wrap = document.createElement('div');
-          wrap.className = 'lc-smart-wrap';
-
-          const zhSpan = document.createElement('span');
-          zhSpan.className = 'lc-smart-zh';
-          zhSpan.textContent = payload.zh;
-
-          const toggleBtn = document.createElement('span');
-          toggleBtn.className = 'lc-toggle-orig-btn';
-          toggleBtn.textContent = '原文';
-
-          const origDiv = document.createElement('div');
-          origDiv.className = 'lc-orig-collapsible';
-          origDiv.textContent = origText;
-
-          toggleBtn.onclick = function(ev) {
-            ev.stopPropagation();
-            origDiv.classList.toggle('lc-open');
-            toggleBtn.textContent = origDiv.classList.contains('lc-open') ? '收起原文' : '原文';
-          };
-
-          wrap.appendChild(zhSpan);
-          wrap.appendChild(toggleBtn);
-          wrap.appendChild(origDiv);
-          el.appendChild(wrap);
+        // Default: Bilingual inline injection
+        if (kind === 'chapter_title') {
+          const span = document.createElement('span');
+          span.className = 'lc-zh-chapter';
+          span.textContent = '译: ' + payload.zh;
+          el.appendChild(span);
+        } else if (kind === 'inline_comment') {
+          const span = document.createElement('span');
+          span.className = 'lc-zh-inline';
+          span.textContent = ' [译: ' + payload.zh + ']';
+          el.appendChild(span);
         } else {
-          // Bilingual mode
-          el.textContent = origText;
           const div = document.createElement('div');
           div.className = 'lc-zh-block';
           const badge = document.createElement('span');
           badge.className = 'lc-zh-badge';
-          badge.textContent = payload.badge || '译';
+          badge.textContent = payload.badge || '中文精译';
           const txt = document.createElement('span');
           txt.textContent = payload.zh;
           div.appendChild(badge);
@@ -531,24 +376,39 @@ final class HybridTranslationBridgeManager: NSObject, ObservableObject {
       window.__LichessCN_updateConfig = function(enabled, mode) {
         config.enabled = enabled;
         config.mode = mode;
-        window.__LichessCN_forceRescan();
+        scanStudyDOM(true);
       };
 
       window.__LichessCN_forceRescan = function() {
-        document.querySelectorAll('[data-lc-id]').forEach(el => {
-          if (el.dataset.lcOrigText) {
-            el.textContent = el.dataset.lcOrigText;
-          }
+        document.querySelectorAll('[data-lc-last-source]').forEach(el => {
           delete el.dataset.lcLastSource;
         });
         lastActiveCommentText = '';
         scanStudyDOM(true);
       };
 
+      // Selection listener: if user selects any text on page, send it to native subtitle bar for instant translation
+      document.addEventListener('selectionchange', function() {
+        const sel = window.getSelection ? window.getSelection().toString().trim() : '';
+        if (sel && sel.length >= 3 && sel.length <= 600 && !hasMostlyChinese(sel)) {
+          if (sel !== lastActiveCommentText) {
+            lastActiveCommentText = sel;
+            try {
+              window.webkit.messageHandlers.lichessTranslator.postMessage({
+                action: 'activeCommentChanged',
+                text: sel,
+                chapter: '划词实时翻译'
+              });
+            } catch (e) {}
+          }
+        }
+      });
+
+      // Debounced MutationObserver to catch Lichess Snabbdom virtual-DOM updates as moves change
       let debounceTimer = null;
       function scheduleScan() {
         if (debounceTimer) clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(() => scanStudyDOM(false), 240);
+        debounceTimer = setTimeout(() => scanStudyDOM(false), 280);
       }
 
       const observer = new MutationObserver(function() {
@@ -573,10 +433,14 @@ final class HybridTranslationBridgeManager: NSObject, ObservableObject {
         startObserving();
       }
 
-      setInterval(() => scanStudyDOM(false), 1400);
+      // Periodic lightweight check for virtual-DOM replacements in Lichess analyse/study view
+      setInterval(() => scanStudyDOM(false), 1500);
     })();
     """#
 }
+
+// MARK: - SwiftUI WKWebView Wrapper
+import SwiftUI
 
 struct LichessHybridWebView: UIViewRepresentable {
     @ObservedObject var manager: HybridTranslationBridgeManager
@@ -605,7 +469,6 @@ struct LichessHybridWebView: UIViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
         webView.allowsBackForwardNavigationGestures = true
-        webView.scrollView.contentInsetAdjustmentBehavior = .never
         webView.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
 
         manager.webView = webView

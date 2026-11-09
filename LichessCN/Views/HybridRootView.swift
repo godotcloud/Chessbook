@@ -13,47 +13,25 @@ struct HybridRootView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // 1. Ultra-Slim 36pt Top Bar (Can be collapsed to full-screen with 1 tap)
-            if !bridge.isCompactFullscreen {
-                slimTopControlHeader
-            }
+            // 1. Compact Native Top Bar
+            topControlHeader
 
-            // 2. Full-Screen Lichess WKWebView (No bottom dock stealing vertical space!)
+            // 2. Full-Featured Lichess.org WKWebView with Injected JS Translator
             ZStack(alignment: .bottom) {
                 LichessHybridWebView(manager: bridge)
+                    .ignoresSafeArea(edges: .bottom)
 
-                // Floating restore pill when in fullscreen mode
-                if bridge.isCompactFullscreen {
-                    HStack {
-                        Spacer()
-                        Button {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                bridge.isCompactFullscreen = false
-                            }
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "character.bubble.fill")
-                                Text("工具栏")
-                            }
-                            .font(.caption2.bold())
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(.ultraThinMaterial)
-                            .clipShape(Capsule())
-                            .shadow(radius: 3)
-                        }
-                        .padding(.trailing, 12)
-                        .padding(.bottom, 12)
-                    }
-                }
-
-                // Optional floating subtitle overlay (only when user explicitly enables it)
+                // 3. Collapsible Real-Time Chinese Commentary Subtitle Overlay
                 if bridge.showFloatingSubtitleCard && !bridge.activeOriginalComment.isEmpty {
                     floatingSubtitleOverlay
                         .padding(.horizontal, 10)
                         .padding(.bottom, 8)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
+
+            // 4. Native Bottom Quick-Switch Navigation Bar
+            bottomNavigationDock
         }
         .sheet(isPresented: $showStudyQuickJumpSheet) {
             studyQuickJumpSheetView
@@ -63,160 +41,83 @@ struct HybridRootView: View {
         }
     }
 
-    // MARK: - Ultra-Slim 36pt Top Control Header
-    private var slimTopControlHeader: some View {
-        HStack(spacing: 8) {
-            // Back / Forward
+    // MARK: - Top Control Header
+    private var topControlHeader: some View {
+        HStack(spacing: 10) {
             Button {
                 bridge.goBack()
             } label: {
                 Image(systemName: "chevron.left")
-                    .font(.system(size: 14, weight: .semibold))
-                    .frame(width: 24, height: 28)
+                    .font(.subheadline.bold())
             }
             .disabled(!bridge.canGoBack)
 
-            // Quick-Switch Lichess Modules Menu (Replaces bulky bottom bar!)
-            Menu {
-                Button {
-                    bridge.navigateTo("https://lichess.org/study")
-                } label: {
-                    Label("研习中心 (Studies)", systemImage: "book.pages.fill")
-                }
-                Button {
-                    bridge.navigateTo("https://lichess.org/")
-                } label: {
-                    Label("对局大厅 (Lobby)", systemImage: "checkerboard.rectangle")
-                }
-                Button {
-                    bridge.navigateTo("https://lichess.org/training")
-                } label: {
-                    Label("战术谜题 (Puzzles)", systemImage: "puzzlepiece.extension.fill")
-                }
-                Button {
-                    bridge.navigateTo("https://lichess.org/analysis")
-                } label: {
-                    Label("分析棋盘 (Analysis)", systemImage: "cpu.fill")
-                }
-                Button {
-                    bridge.navigateTo("https://lichess.org/tv")
-                } label: {
-                    Label("大师直播 (Lichess TV)", systemImage: "tv.fill")
-                }
-                Divider()
-                Button {
-                    showStudyQuickJumpSheet = true
-                } label: {
-                    Label("输入研习 ID 或自定义网址...", systemImage: "magnifyingglass")
-                }
-                Button {
-                    bridge.reload()
-                } label: {
-                    Label("刷新当前网页", systemImage: "arrow.clockwise")
-                }
+            Button {
+                bridge.goForward()
             } label: {
-                HStack(spacing: 4) {
+                Image(systemName: "chevron.right")
+                    .font(.subheadline.bold())
+            }
+            .disabled(!bridge.canGoForward)
+
+            Button {
+                showStudyQuickJumpSheet = true
+            } label: {
+                HStack(spacing: 5) {
                     if bridge.isLoading || bridge.isTranslatingNow {
                         ProgressView()
-                            .scaleEffect(0.65)
+                            .scaleEffect(0.7)
                     } else {
-                        Image(systemName: "compass.drawing")
-                            .font(.system(size: 12, weight: .semibold))
+                        Image(systemName: "globe")
+                            .font(.caption)
                     }
-                    Text(shortSectionTitle(bridge.currentURLString))
-                        .font(.system(size: 12, weight: .semibold))
+                    Text(shortHostPathDisplay(bridge.currentURLString))
+                        .font(.caption.monospaced())
                         .lineLimit(1)
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 9, weight: .bold))
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
+                .frame(maxWidth: .infinity)
                 .background(Color(.secondarySystemBackground))
                 .clipShape(Capsule())
             }
             .foregroundColor(.primary)
 
-            Spacer(minLength: 4)
-
-            // Quick Display Mode & Engine Menu
-            Menu {
-                Section("显示样式 (解决文字拥挤)") {
-                    ForEach(InlineInjectionMode.allCases) { mode in
-                        Button {
-                            bridge.injectionMode = mode
-                        } label: {
-                            HStack {
-                                Text(mode.displayName)
-                                if bridge.injectionMode == mode {
-                                    Image(systemName: "checkmark")
-                                }
-                            }
-                        }
-                    }
-                }
-                Section("切换免费翻译源") {
-                    ForEach(TranslationProviderType.allCases) { provider in
-                        Button {
-                            bridge.selectedProvider = provider
-                        } label: {
-                            HStack {
-                                Text(provider.displayName)
-                                if bridge.selectedProvider == provider {
-                                    Image(systemName: "checkmark")
-                                }
-                            }
-                        }
-                    }
-                }
-                Divider()
-                Button {
-                    bridge.triggerFullPageRescan()
-                } label: {
-                    Label("立即重新扫描翻译本页", systemImage: "bolt.fill")
-                }
-                Button {
-                    showTranslationSettingsSheet = true
-                } label: {
-                    Label("更多翻译与悬浮窗设置...", systemImage: "slider.horizontal.3")
-                }
+            // Instant Rescan / Translate Button
+            Button {
+                bridge.triggerFullPageRescan()
             } label: {
-                HStack(spacing: 4) {
+                HStack(spacing: 3) {
                     Image(systemName: "character.bubble.fill")
-                        .font(.system(size: 11))
-                    Text("\(bridge.lastUsedProviderBadge)·\(bridge.injectionMode.shortName)")
-                        .font(.system(size: 11, weight: .bold))
+                    Text(bridge.lastUsedProviderBadge)
+                        .font(.caption2.bold())
                 }
-                .padding(.horizontal, 9)
+                .padding(.horizontal, 8)
                 .padding(.vertical, 5)
                 .background(bridge.autoTranslateEnabled ? Color.accentColor.opacity(0.15) : Color(.secondarySystemBackground))
                 .foregroundColor(bridge.autoTranslateEnabled ? .accentColor : .secondary)
                 .clipShape(Capsule())
             }
 
-            // 1-Tap Fullscreen Collapse Button
             Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    bridge.isCompactFullscreen = true
-                }
+                showTranslationSettingsSheet = true
             } label: {
-                Image(systemName: "arrow.up.left.and.arrow.down.right")
-                    .font(.system(size: 13, weight: .semibold))
-                    .frame(width: 26, height: 28)
+                Image(systemName: "slider.horizontal.3")
+                    .font(.subheadline.bold())
             }
-            .accessibilityLabel("隐藏顶部栏进入全屏")
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
         .background(Color(.systemBackground))
         .overlay(Divider(), alignment: .bottom)
     }
 
-    // MARK: - Optional Floating Subtitle Card
+    // MARK: - Floating Real-Time Subtitle Card
     private var floatingSubtitleOverlay: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Label(
-                    bridge.activeChapterTitle.isEmpty ? "当前棋评译文" : bridge.activeChapterTitle,
+                    bridge.activeChapterTitle.isEmpty ? "研习棋评实时中文翻译" : bridge.activeChapterTitle,
                     systemImage: "sparkles"
                 )
                 .font(.caption.bold())
@@ -238,6 +139,13 @@ struct HybridRootView: View {
                 #endif
 
                 Button {
+                    bridge.triggerFullPageRescan()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.caption)
+                }
+
+                Button {
                     withAnimation { bridge.showFloatingSubtitleCard = false }
                 } label: {
                     Image(systemName: "xmark.circle.fill")
@@ -246,24 +154,70 @@ struct HybridRootView: View {
                 }
             }
 
-            Text(bridge.activeTranslatedComment.isEmpty ? bridge.activeOriginalComment : bridge.activeTranslatedComment)
-                .font(.subheadline.weight(.medium))
-                .foregroundColor(.primary)
-                .lineLimit(4)
-                .textSelection(.enabled)
+            if bridge.isTranslatingNow && bridge.activeTranslatedComment.isEmpty {
+                HStack(spacing: 6) {
+                    ProgressView().scaleEffect(0.75)
+                    Text("正在实时翻译当前着法注解...")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            } else {
+                Text(bridge.activeTranslatedComment.isEmpty ? bridge.activeOriginalComment : bridge.activeTranslatedComment)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundColor(.primary)
+                    .lineLimit(4)
+                    .textSelection(.enabled)
+            }
+
+            Text(bridge.activeOriginalComment)
+                .font(.caption2)
+                .foregroundColor(.secondary)
+                .lineLimit(2)
         }
         .padding(10)
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .shadow(color: .black.opacity(0.15), radius: 5, x: 0, y: 2)
+        .shadow(color: .black.opacity(0.18), radius: 6, x: 0, y: 2)
     }
 
+    // MARK: - Bottom Quick-Switch Navigation Bar
+    private var bottomNavigationDock: some View {
+        HStack(spacing: 0) {
+            dockButton(title: "对局大厅", icon: "checkerboard.rectangle", url: "https://lichess.org/")
+            dockButton(title: "研习翻译", icon: "book.pages.fill", url: "https://lichess.org/study")
+            dockButton(title: "战术谜题", icon: "puzzlepiece.extension.fill", url: "https://lichess.org/training")
+            dockButton(title: "分析棋盘", icon: "cpu.fill", url: "https://lichess.org/analysis")
+            dockButton(title: "大师直播", icon: "tv.fill", url: "https://lichess.org/tv")
+        }
+        .padding(.top, 6)
+        .padding(.bottom, 4)
+        .background(Color(.systemBackground))
+        .overlay(Divider(), alignment: .top)
+    }
+
+    private func dockButton(title: String, icon: String, url: String) -> some View {
+        let isActive = bridge.currentURLString.hasPrefix(url) && (url != "https://lichess.org/" || bridge.currentURLString == "https://lichess.org/")
+        return Button {
+            bridge.navigateTo(url)
+        } label: {
+            VStack(spacing: 3) {
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: .semibold))
+                Text(title)
+                    .font(.system(size: 10, weight: .medium))
+            }
+            .foregroundColor(isActive ? .accentColor : .secondary)
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    // MARK: - Study Quick Jump & URL Input Sheet
     private var studyQuickJumpSheetView: some View {
         NavigationStack {
             List {
-                Section("输入 Lichess 研习 ID 或完整网址") {
+                Section("输入 Lichess 研习 ID、网址或搜索关键词") {
                     HStack {
-                        TextField("输入 8 位研习 ID (如 ZCPaIb70) 或 URL", text: $customURLOrStudyID)
+                        TextField("输入 8 位研习 ID (如 wukLYIXj) 或完整 URL", text: $customURLOrStudyID)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                         Button("前往") {
@@ -276,25 +230,25 @@ struct HybridRootView: View {
                     }
                 }
 
-                Section("常用入口与热门研习") {
+                Section("热门英文研习一键直达 (自动开启网页内嵌中文翻译)") {
                     studyShortcutRow(
-                        title: "卡罗-卡恩防御研习 (Caro-Kann Study)",
-                        subtitle: "直接打开你刚才浏览的 ZCPaIb70 研习，检验全新清爽排版效果",
-                        url: "https://lichess.org/study/ZCPaIb70"
+                        title: "Silman 经典残局教程 (Silman's Endgame Course)",
+                        subtitle: "Lichess 最受好评的残局研习，走子时自动将英文讲解译为中文",
+                        url: "https://lichess.org/study/wukLYIXj"
                     )
                     studyShortcutRow(
-                        title: "Lichess 热门研习广场",
-                        subtitle: "浏览全球棋手创建的开局、中局与残局研习",
+                        title: "Lichess 官方全部热门研习广场",
+                        subtitle: "浏览全球棋手分享的开局、中局与残局研习，章节名与棋评自动中文化",
                         url: "https://lichess.org/study/all/popular"
                     )
                     studyShortcutRow(
-                        title: "Silman 经典残局教程",
-                        subtitle: "互动式残局训练，支持清爽中文替换与点击展开原文",
-                        url: "https://lichess.org/study/wukLYIXj"
+                        title: "我的个人研习库 (需在网页登录 Lichess)",
+                        subtitle: "直接访问你自己创建或收藏的 Lichess 研习",
+                        url: "https://lichess.org/study/mine/hot"
                     )
                 }
             }
-            .navigationTitle("研习与页面跳转")
+            .navigationTitle("快速跳转与研习直达")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("关闭") { showStudyQuickJumpSheet = false }
@@ -320,23 +274,29 @@ struct HybridRootView: View {
         }
     }
 
+    // MARK: - Translation & Hybrid Bridge Settings Sheet
     private var translationSettingsSheetView: some View {
         NavigationStack {
             Form {
-                Section("排版与防遮挡模式") {
-                    Toggle("启用研习实时中文翻译", isOn: $bridge.autoTranslateEnabled)
+                Section("研习实时拦截与翻译开关") {
+                    Toggle("启用研习章节与注解实时中文翻译", isOn: $bridge.autoTranslateEnabled)
+                    Toggle("显示底部原生实时字幕悬浮卡片", isOn: $bridge.showFloatingSubtitleCard)
 
-                    Picker("网页内嵌样式", selection: $bridge.injectionModeRaw) {
+                    Picker("网页内嵌译文显示模式", selection: $bridge.injectionModeRaw) {
                         ForEach(InlineInjectionMode.allCases) { mode in
                             Text(mode.displayName).tag(mode.rawValue)
                         }
                     }
-                    .pickerStyle(.inline)
 
-                    Toggle("额外开启底部悬浮字幕卡", isOn: $bridge.showFloatingSubtitleCard)
+                    Button {
+                        bridge.triggerFullPageRescan()
+                        showTranslationSettingsSheet = false
+                    } label: {
+                        Label("立即重新扫描并翻译当前网页全部棋评", systemImage: "bolt.fill")
+                    }
                 }
 
-                Section("免配置多翻译引擎切换") {
+                Section("免配置多翻译引擎切换 (自动容灾)") {
                     Picker("首选翻译源", selection: $bridge.selectedProviderRaw) {
                         ForEach(TranslationProviderType.allCases) { provider in
                             Text(provider.displayName).tag(provider.rawValue)
@@ -344,8 +304,16 @@ struct HybridRootView: View {
                     }
                     .pickerStyle(.inline)
                 }
+
+                Section("实时拦截统计") {
+                    LabeledContent("本次会话已自动翻译节点数", value: "\(bridge.translatedCount) 处")
+                    LabeledContent("当前响应翻译引擎", value: bridge.lastUsedProviderBadge)
+                    Text("提示：在 Lichess 网页中点击任意一步棋、展开章节列表或用手指选中任意一段英文文字，原生桥接器都会自动拦截并实时翻译为地道的国际象棋中文术语。")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
-            .navigationTitle("界面与翻译设置")
+            .navigationTitle("混合桥接与翻译设置")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("完成") { showTranslationSettingsSheet = false }
@@ -354,11 +322,9 @@ struct HybridRootView: View {
         }
     }
 
-    private func shortSectionTitle(_ urlStr: String) -> String {
-        if urlStr.contains("/study") { return "研习中心" }
-        if urlStr.contains("/training") { return "战术谜题" }
-        if urlStr.contains("/analysis") { return "分析棋盘" }
-        if urlStr.contains("/tv") { return "大师直播" }
-        return "Lichess"
+    private func shortHostPathDisplay(_ urlStr: String) -> String {
+        guard let url = URL(string: urlStr) else { return urlStr }
+        let path = url.path.isEmpty || url.path == "/" ? "/ (首页大厅)" : url.path
+        return "lichess.org\(path)"
     }
 }
