@@ -1,10 +1,8 @@
-# LichessStudy Hybrid v3.0 — 原生壳 + WKWebView + JS 注入实时研习翻译
+# LichessStudy Hybrid v4.0 — 界面防拥挤与清爽排版优化版
 
-本版本采用 **SwiftUI 原生导航壳 + `WKWebView` 完整复用 Lichess 网页版 + 注入式 JS 桥接器 (`WKScriptMessageHandler`)** 架构：
-
-1. **100% 原汁原味的 Lichess 体验**：直接复用 `lichess.org` 官方棋盘 (`chessground`)、音效、预走棋 (Premove)、在线寻局、锦标赛、每日战术谜题以及内置的 Stockfish WASM 本地/云端分析引擎。
-2. **注入式 JS 实时拦截翻译 (`LichessWebBridge.swift`)**：
-   - 自动注入 `MutationObserver` 脚本监听 Lichess 研习页面的 `.study__comments`（棋评框）、`.gamebook .comment`（互动教学提示）、`.tview2 comment`（着法树内嵌注解）与 `.study__chapters h3`（研习章节标题），并在网页内直接渲染中英双语对照块。
-   - 支持**划词即译**：在网页上选中任意英文段落，底部原生悬浮卡片立即显示中文精译。
-   - 内置免配置多翻译源（GTX 极速神经翻译、Pollinations AI 大模型、Lingva、MyMemory）与国际象棋专业术语词库修正。
-3. **SideStore 100% 兼容**：`CFBundleName` 与 `CFBundleDisplayName` 强制锁定为纯 ASCII 英文字符 `LichessStudy`（Bundle ID 为 `com.lichess.studyapp`），彻底杜绝 `appIdName` 报错。
+针对手机端 Lichess 互动研习（`.gamebook`）与章节列表的排版特点进行了全面优化：
+1. **清爽中文替换 + `[原文]` 折叠按钮 (`smart_compact` 默认模式)**：直接将冗长的英文解说原位替换为中文，并在末尾附带小巧的 `原文` 按钮（点击可随时展开/收起英文原句），不再让文字框高度翻倍。
+2. **彻底解决绿底「下一页」按钮与蓝色章鱼遮挡文字**：注入自适应 Flex 布局 CSS，使 `.gamebook .comment` 独立平滑滚动，绿底「下一页」按钮固定在解说框下方，蓝色章鱼图标自动缩小并半透明淡化。
+3. **章节列表单行同行排版与自适应高度**：章节名采用 `中文译名 · English` 同行自适应行高展示，不再出现第二行文字被截断一半的问题。
+4. **移除底部占高导航栏，修复棋盘顶部第一排被遮挡**：将导航整合进顶部 36pt 超薄工具栏（还支持一键全屏隐藏），释放宝贵的纵向屏幕空间，棋盘 1–8 横线完整显示。
+5. **升级国际象棋专业术语修正**：自动将机器翻译的“古典变奏”修正为“古典变例”、“这种辩护”修正为“这种防御”、“这项研究”修正为“本研习”、“黑色开局”修正为“黑方开局”。
